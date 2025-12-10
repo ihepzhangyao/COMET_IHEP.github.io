@@ -116,26 +116,12 @@
 
             <div> Author: Yao Zhang (zhangyao@ihep.ac.cn)</div>
         </div>
-        <div class="control-group">
-            <label style="color:#4fc3f7; display:inline-block; width:80px;">XY Size:</label>
-            <input type="range" id="xy-size-slider" min="120" max="800" step="10" value="340" style="vertical-align:middle;">
-            <span id="xy-size-value" style="color:#fff; margin-left:8px;">340px</span>
-        </div>
-        <div class="control-group">
-            <label style="color:#4fc3f7; display:inline-block; width:80px;">XY Elements:</label>
-            <div style="display:inline-block; vertical-align:middle;">
-                <label style="color:#fff; margin-right:6px;"><input type="checkbox" id="chk-track" checked>Track</label>
-                <label style="color:#fff; margin-right:6px;"><input type="checkbox" id="chk-momentum" checked>p</label>
-                <label style="color:#fff; margin-right:6px;"><input type="checkbox" id="chk-phi" checked>φ</label>
-                <label style="color:#fff; margin-right:6px;"><input type="checkbox" id="chk-psi" checked>ψ</label>
-                <label style="color:#fff; margin-right:6px;"><input type="checkbox" id="chk-labels" checked>Labels</label>
-            </div>
-            <button id="xy-reset-btn" style="margin-left:8px;">Reset XY</button>
-        </div>
     </div>
-     <canvas id="xyCanvas" width="340" height="340" style="position:absolute; bottom:20px; right:20px;
-         border:1px solid #4fc3f7; background:#000a; width:340px; height:340px;">
+     <canvas id="xyCanvas" width="200" height="200" style="position:absolute; bottom:20px; right:20px;
+         border:1px solid #4fc3f7; background:rgba(0,0,0,0.0); pointer-events:none;">
      </canvas>
+
+     <div id="status">Ready</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
@@ -153,6 +139,7 @@
         const COLOR_MIST_BLUE = 0x4E79A7;
         const COLOR_ASH_PURPLE = 0xB07AA1;
         const COLOR_NUDE_PINK = 0xFF9DA7;
+        const COLOR_CRIMSON = 0xDC143C;
         const COLOR_SAND_BROWN = 0x8C564B;
         const COLOR_BLACK = 0x000000;
         const COLOR_WHITE = 0xFFFFFF;
@@ -285,113 +272,57 @@
         // 4. 创建φ角 - 点P在圆柱上的位置
         function createPhiArc() {
             const phiRad = THREE.MathUtils.degToRad(params.phi0);
-            const points = [];
-            const segments = 30;
-
-            for (let i = 0; i <= segments; i++) {
-                const angle = (i / segments) * phiRad;
-                const radius = params.cylinder_radius + 0.01; // 稍微大于圆柱半径
-                points.push(new THREE.Vector3(
-                    radius * Math.cos(angle),
-                    radius * Math.sin(angle),
-                    0.1 // 稍微抬高避免Z-fighting
-                ));
-            }
-
-            const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            const material = new THREE.LineBasicMaterial({
-                color: COLOR_PINE_GREEN,
-                linewidth: LINEWIDTH
-            });
-
-            return new THREE.Line(geometry, material);
+            const radius = params.cylinder_radius * 0.5;
+            const origin = new THREE.Vector3(0, 0, 0.0);
+            const dirA = new THREE.Vector3(1, 0, 0);
+            const dirB = new THREE.Vector3(Math.cos(phiRad), Math.sin(phiRad), 0);
+            return createAngleArc(origin, dirA, dirB, radius, { color: COLOR_PINE_GREEN, label: 'φ', labelScale: 1.0, showLabel: false, labelOffset: 0.08 });
         }
 
-        // 5. 创建ψ角- px,py夹角
+        // 5. 创建ψ角- pt，x轴夹角
         function createPsiArc() {
             const phiRad = THREE.MathUtils.degToRad(params.phi0);
             const psiRad = THREE.MathUtils.degToRad(params.psi);
-            const points = [];
-            const segments = 30;
-
             // 点P的位置
             const x0 = params.cylinder_radius * Math.cos(phiRad);
             const y0 = params.cylinder_radius * Math.sin(phiRad);
-            const zP = 0;
-
-            // 在XY平面内绘制ψ角
-            // ψ角是px,py的夹角，所以在XY平面内
+            const zP = params.z0;
+            const origin = new THREE.Vector3(x0, y0, zP);
+            const dirA = new THREE.Vector3(1, 0, 0);
+            const dirB = new THREE.Vector3(Math.cos(psiRad), Math.sin(psiRad), 0); // momentum transverse
             const arcRadius = 1.5;
-
-            // 起点：径向方向
-            const startAngle = phiRad;
-
-            // 终点：动量方向
-            const endAngle = psiRad;
-
-            for (let i = 0; i <= segments; i++) {
-                const t = (i / segments) * psiRad;
-
-                // 从X轴开始，旋转ψ角
-                const angle = t;
-                const x = arcRadius * Math.cos(angle);
-                const y = arcRadius * Math.sin(angle);
-
-                points.push(new THREE.Vector3(
-                    x0 + x,
-                    y0 + y,
-                    zP + 0.1 // 稍微抬高
-                ));
-            }
-
-            const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            const material = new THREE.LineBasicMaterial({
-                color: COLOR_SOFT_RED,
-                linewidth: 2
-            });
-
-            return new THREE.Line(geometry, material);
+            return createAngleArc(origin, dirA, dirB, arcRadius, { color: COLOR_SOFT_RED, label: 'ψ', labelScale: 0.9, showLabel: false, labelOffset: 0.06 });
         }
 
         function createLambdaArc(pz,pt) {
-            const points = [];
-            const segments = 30;
-
-            // 点P的位置
+            // Draw λ as the angle between pt (transverse) and p (full momentum)
+            // Origin at point P, arc lies in the plane spanned by pt and p
             const phiRad = THREE.MathUtils.degToRad(params.phi0);
-            //const pt = params.kappa !== 0 ? 1 / Math.abs(params.kappa) : 10; // 避免除以零
-            //const x = pt * Math.cos(THREE.MathUtils.degToRad(params.psi));
-            //const y = pt * Math.sing(THREE.MathUtils.degToRad(params.psi));
-            //const z = params.z0;
+            const psiRad = THREE.MathUtils.degToRad(params.psi);
+            const x0 = params.cylinder_radius * Math.cos(phiRad);
+            const y0 = params.cylinder_radius * Math.sin(phiRad);
+            const zP = params.z0;
 
-            //// 在Z方向绘制λ角
-            //const arcRadius = params.lambda;
+            // transverse momentum magnitude and full components
+            const ptVal = params.kappa !== 0 ? 1 / Math.abs(params.kappa) : 10;
+            const px = ptVal * Math.cos(psiRad);
+            const py = ptVal * Math.sin(psiRad);
+            const pzVal = params.lambda * ptVal;
 
-            //for (let i = 0; i <= segments; i++) {
-            //    const t = (i / segments) * Math.atan(params.lambda);
+            // directions: pt (in XY plane) and full momentum p (has z component)
+            const ptDir = new THREE.Vector3(Math.cos(psiRad), Math.sin(psiRad), 0).normalize();
+            const pDir = new THREE.Vector3(Math.cos(psiRad), Math.sin(psiRad), params.lambda).normalize();
 
-            //    // 从XY平面开始，旋转λ角
-            //    const x = arcRadius * Math.cos(t);
-            //    const z = arcRadius * Math.sin(t);
+            const origin = new THREE.Vector3(x0, y0, zP);
 
-            //    points.push(new THREE.Vector3(
-            //        x0 + x,
-            //        y0,
-            //        zP + z + 0.1 // 稍微抬高
-            //    ));
-            //}
+            // choose a reasonable radius for the arc (small, relative to detector)
+            const arcRadius = Math.max(0.4, Math.min(1.5, ptVal * 0.5));
 
-            //const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            //const material = new THREE.LineBasicMaterial({
-            //    color: COLOR_NUDE_PINK,
-            //    linewidth: 2
-            //});
-
-            //return new THREE.Line(geometry, material);
+            return createAngleArc(origin, ptDir, pDir, arcRadius, { color: COLOR_CRIMSON, label: 'λ', labelScale: 1.5, showLabel: true, labelOffset: 0.06 });
         }
 
-        // 6. 创建Y平面（灰色半透明平面）
-        function createYPlane() {
+        // 6. 创建Z平面（灰色半透明平面） — 位于圆柱底部 (z = -cylinder_length/2)
+        function createZPlane() {
             const geometry = new THREE.PlaneGeometry(15, 15);
             const material = new THREE.MeshPhongMaterial({
                 color: COLOR_GRAY,
@@ -401,15 +332,18 @@
             });
 
             const plane = new THREE.Mesh(geometry, material);
-            plane.name = "YPlane";
-            plane.rotation.x = Math.PI / 2; // 垂直于Y轴
+            plane.name = "ZPlane";
+            // 平面默认位于 XY 平面，把它移动到圆柱底部 (z = -length/2)
+            const zPos = -Math.abs(params.cylinder_length) / 2 - 0.01; // 小偏移以避免 Z-fighting
+            plane.position.set(0, 0, zPos);
 
             return plane;
         }
 
-        // createLabel: 可选传入 scale 参数用于在小窗中按像素宽度自适应标签大小
+        // createLabel: 可选传入 scale 和 alwaysOnTop 参数
         // scale: 如果为 null 则使用默认 (1.5, 0.75)，否则设置为 (scale, scale*0.5)
-        function createLabel(text, position, color = 0xffffff, scale = null) {
+        // alwaysOnTop: 如果为 true，则禁用深度测试并将 renderOrder 拉高，避免被几何体遮挡
+        function createLabel(text, position, color = 0xffffff, scale = null, alwaysOnTop = false) {
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
 
@@ -438,17 +372,129 @@
                 map: texture,
                 transparent: true
             });
+            if (alwaysOnTop) {
+                material.depthTest = false;
+                material.depthWrite = false;
+            }
             const sprite = new THREE.Sprite(material);
 
-            // 调整缩放：保持默认纵横比 (2:1)
-            if (scale === null) {
-                sprite.scale.set(1.5, 0.75, 1);
-            } else {
-                sprite.scale.set(scale, scale * 0.5, 1);
-            }
+            // 调整缩放（根据画布大小）
+            if (scale === null) sprite.scale.set(1.5, 0.75, 1);
+            else sprite.scale.set(scale, scale * 0.5, 1);
             sprite.position.copy(position);
+            if (alwaysOnTop) sprite.renderOrder = 999;
 
             return sprite;
+        }
+
+        // 替代实现：手工切分的虚线（不依赖 LineDashedMaterial 的 computeLineDistances）
+        // pointsArray: Array<THREE.Vector3>, opts: { dashSize, gapSize, color, linewidth }
+        function createDashedLine(pointsArray, opts = {}) {
+            const dashSize = opts.dashSize !== undefined ? opts.dashSize : 0.8;
+            const gapSize = opts.gapSize !== undefined ? opts.gapSize : 0.6;
+            const color = opts.color !== undefined ? opts.color : COLOR_GRAY;
+            const linewidth = opts.linewidth !== undefined ? opts.linewidth : 1;
+
+            if (!pointsArray || pointsArray.length < 2) return new THREE.Group();
+
+            // 1) 计算每段长度及总长
+            const segLens = [];
+            let totalLen = 0;
+            for (let i = 0; i < pointsArray.length - 1; i++) {
+                const a = pointsArray[i];
+                const b = pointsArray[i + 1];
+                const l = a.distanceTo(b);
+                segLens.push(l);
+                totalLen += l;
+            }
+            if (totalLen <= 0) return new THREE.Group();
+
+            // 2) 生成 dash 段
+            const dashSegments = [];
+            const step = dashSize + gapSize;
+            for (let start = 0; start < totalLen; start += step) {
+                const ds = start;
+                const de = Math.min(start + dashSize, totalLen);
+                if (de <= ds) continue;
+
+                let accum = 0;
+                for (let i = 0; i < segLens.length; i++) {
+                    const segStart = accum;
+                    const segEnd = accum + segLens[i];
+                    accum = segEnd;
+                    const ovStart = Math.max(ds, segStart);
+                    const ovEnd = Math.min(de, segEnd);
+                    if (ovEnd > ovStart + 1e-9) {
+                        const localStartT = (ovStart - segStart) / (segLens[i] || 1);
+                        const localEndT = (ovEnd - segStart) / (segLens[i] || 1);
+                        const p0 = pointsArray[i];
+                        const p1 = pointsArray[i + 1];
+                        const segP0 = new THREE.Vector3().copy(p0).lerp(p1, localStartT);
+                        const segP1 = new THREE.Vector3().copy(p0).lerp(p1, localEndT);
+                        dashSegments.push(segP0, segP1);
+                    }
+                }
+            }
+
+            // 3) 构建几何并返回 LineSegments
+            const positions = new Float32Array(dashSegments.length * 3);
+            for (let i = 0; i < dashSegments.length; i++) {
+                positions[i * 3 + 0] = dashSegments[i].x;
+                positions[i * 3 + 1] = dashSegments[i].y;
+                positions[i * 3 + 2] = dashSegments[i].z;
+            }
+            const geom = new THREE.BufferGeometry();
+            geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const mat = new THREE.LineBasicMaterial({ color: color, linewidth: linewidth });
+            return new THREE.LineSegments(geom, mat);
+        }
+
+        // 通用：在两个方向向量之间绘制角弧（origin 为圆心）
+        // origin: THREE.Vector3, dirA/dirB: THREE.Vector3 (方向向量)，radius: number 或 null
+        // options: { color, segments, label, labelScale, showLabel, alwaysOnTop, labelOffset }
+        function createAngleArc(origin, dirA, dirB, radius = null, options = {}) {
+            const color = options.color !== undefined ? options.color : COLOR_NUDE_PINK;
+            const segments = options.segments || 28;
+            const label = options.label || '';
+            const labelScale = options.labelScale || 0.9;
+            const showLabel = options.showLabel !== undefined ? options.showLabel : true;
+            const alwaysOnTop = options.alwaysOnTop !== undefined ? options.alwaysOnTop : true;
+            const labelOffset = options.labelOffset !== undefined ? options.labelOffset : 0.06;
+
+            const u = dirA.clone().normalize();
+            const proj = u.clone().multiplyScalar(dirB.dot(u));
+            let v = dirB.clone().sub(proj);
+            if (v.length() < 1e-6) {
+                v = new THREE.Vector3(-u.y, u.x, 0);
+                if (v.length() < 1e-6) v = new THREE.Vector3(0, 0, 1);
+            }
+            v.normalize();
+
+            const cosA = THREE.MathUtils.clamp(u.dot(dirB), -1, 1);
+            const angle = Math.acos(cosA);
+
+            if (radius === null) radius = Math.max(0.4, 0.25);
+
+            const pts = [];
+            for (let i = 0; i <= segments; i++) {
+                const t = (i / segments) * angle;
+                const ptComp = u.clone().multiplyScalar(radius * Math.cos(t));
+                const vComp = v.clone().multiplyScalar(radius * Math.sin(t));
+                pts.push(origin.clone().add(ptComp).add(vComp));
+            }
+
+            const grp = new THREE.Group();
+            const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: color, linewidth: 2 }));
+            grp.add(arc);
+
+            if (showLabel && label) {
+                const midT = angle * 0.5;
+                const midPos = origin.clone().add(u.clone().multiplyScalar(radius * Math.cos(midT))).add(v.clone().multiplyScalar(radius * Math.sin(midT)));
+                midPos.add(v.clone().multiplyScalar(labelOffset));
+                grp.add(createLabel(label, midPos, color, labelScale, alwaysOnTop));
+            }
+
+            return grp;
         }
 
 
@@ -490,14 +536,12 @@
             const zArrow = new THREE.ArrowHelper(zDir, zOrigin, axisLength, COLOR_MIST_BLUE, headLength, headWidth);
             group.add(zArrow);
 
-            // add axis labels
+            // add 3D axis labels (restore original positions)
             group.add(createLabel('X', new THREE.Vector3(axisLength + 0.2, 0, 0), COLOR_SOFT_RED));
             group.add(createLabel('Y', new THREE.Vector3(0.5, axisLength - 0.2, 0), COLOR_PINE_GREEN));
             group.add(createLabel('Z', new THREE.Vector3(0, 0, axisLength + 0.2), COLOR_MIST_BLUE));
             group.add(createLabel('O', new THREE.Vector3(0.5, 0.5, 0), COLOR_GRAY));
-            group.add(createLabel("XZ-Plane", new THREE.Vector3(8, 2, 0), x_plane_color = COLOR_GRAY));
-
-
+            //group.add(createLabel('XZ-Plane', new THREE.Vector3(8, 2, 0), COLOR_GRAY));
             return group;
         }
 
@@ -526,21 +570,15 @@
                 Math.sin(psiRad),
                 params.lambda
             ).normalize();
-            const pxDir = new THREE.Vector3(
-                px,
-                0,
-                0
-            ).normalize();
-            const pyDir = new THREE.Vector3(
-                0,
-                py,
-                0
-            ).normalize();
-            const pzDir = new THREE.Vector3(
-                0,
-                0,
-                pz
-            ).normalize();
+            // directions: use sign for axis-aligned components and keep lengths absolute
+            const pxDir = new THREE.Vector3(Math.sign(px) || 1, 0, 0).normalize();
+            const pyDir = new THREE.Vector3(0, Math.sign(py) || 1, 0).normalize();
+            const pzDir = new THREE.Vector3(0, 0, (pz >= 0 ? 1 : -1)).normalize();
+            const ptDir = new THREE.Vector3(
+                    Math.cos(psiRad),
+                    Math.sin(psiRad),
+                    0
+                ).normalize();
 
             const momentumLength = p;
             const arrowOrigin = new THREE.Vector3(x0, y0, zP);
@@ -557,7 +595,7 @@
             const pxArrowHelper = new THREE.ArrowHelper(
                 pxDir,           // 方向（已归一化）
                 arrowOrigin,           // 起点
-                px, // 长度
+                Math.abs(px), // 长度
                 COLOR_SOFT_RED,              // 颜色
                 0.2,  // 箭头长度
                 0.2  // 箭头宽度
@@ -565,7 +603,7 @@
             const pyArrowHelper = new THREE.ArrowHelper(
                 pyDir,           // 方向（已归一化）
                 arrowOrigin,           // 起点
-                py,// 长度
+                Math.abs(py),// 长度
                 COLOR_PINE_GREEN,              // 颜色
                 0.2,  // 箭头长度
                 0.2  // 箭头宽度
@@ -573,7 +611,7 @@
             const pzArrowHelper = new THREE.ArrowHelper(
                 pzDir,           // 方向（已归一化）
                 arrowOrigin,           // 起点
-                pz, // 长度
+                Math.abs(pz), // 长度
                 COLOR_MIST_BLUE,              // 颜色
                 0.2,  // 箭头长度
                 0.2  // 箭头宽度
@@ -590,91 +628,46 @@
                 0.2,  // 箭头长度
                 0.2  // 箭头宽度
             );
-            // a dashed line from point of pt to point of p
-            const pz2ptLine = new THREE.Line(
-                new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(
-                    x0 + px,
-                    y0 + py,
-                    zP + 0
-                ),
-                new THREE.Vector3(
-                    x0,
-                    y0,
-                    zP + pz,
-                )
-                ]),
-                new THREE.LineDashedMaterial({
-                    color: COLOR_LAKE_CYAN,
-                    dashSize: 1,
-                    gapSize: 2,
-                    linewidth: LINEWIDTH
-                })
-            );
+            // // a dashed line from point of pt to point of p
+            // const pz2ptLine = createDashedLine([
+            //     new THREE.Vector3(x0 + px, y0 + py, zP + 0),
+            //     new THREE.Vector3(x0, y0, zP + pz)
+            // ], { color: COLOR_LAKE_CYAN, dashSize: 1, gapSize: 2, linewidth: LINEWIDTH });
+            // dashed line from origin O to P' (3D) to illustrate φ reference
+            const opDashed = createDashedLine([
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(x0, y0, 0)
+            ], { color: COLOR_GRAY, dashSize: 0.5, gapSize: 0.5 });
             group.add(arrowHelper);
             group.add(pxArrowHelper);
             group.add(pyArrowHelper);
             group.add(pzArrowHelper);
             group.add(ptArrowHelper);
-            group.add(pz2ptLine);
+            // group.add(pz2ptLine);
+            group.add(opDashed);
 
 
-            // 添加各个标签
-            group.add(createLabel("p", new THREE.Vector3(
-                x0 + momentumDir.x * (momentumLength + 0.5),
-                y0 + momentumDir.y * (momentumLength + 0.5),
-                zP + momentumDir.z * (momentumLength + 0.5)
-            ), COLOR_WARM_ORANGE));
-            group.add(createLabel("φ=" + params.phi0 + "°",
-                new THREE.Vector3(
-                    (params.cylinder_radius + 0.6) * Math.cos(phiRad / 2),
-                    (params.cylinder_radius + 0.6) * Math.sin(phiRad / 2),
-                    0.2
-                ), COLOR_PINE_GREEN));
-            group.add(createLabel("ψ=" + params.psi + "°",
-                new THREE.Vector3(
-                    x0 + 2.1 * Math.cos(psiRad / 2),
-                    y0 + 2.1 * Math.sin(psiRad / 2),
-                    0.2
-                ), COLOR_SOFT_RED));
-            group.add(createLabel("λ=" + params.lambda.toFixed(1), new THREE.Vector3(
-                x0 + (Math.cos(psiRad)) * (pt + 0.8),
-                y0 + (Math.sin(psiRad)) * (pt + 0.8),
-                zP - 0.5
-            ), COLOR_LAKE_CYAN));
+            // Add minimal 3D labels: only 'pz' and 'p' as requested
+            // pz label at the tip of the pz arrow (slightly offset outward)
+            const pzTip = arrowOrigin.clone().add(pzDir.clone().multiplyScalar(Math.abs(pz) + 0.18));
+            group.add(createLabel('pz', pzTip, COLOR_MIST_BLUE, null, true));
 
-            group.add(createLabel("z0=" + params.z0.toFixed(1), new THREE.Vector3(
-                x0 + 1.,
-                y0 - 0.2,
-                zP
-            ), COLOR_MIST_BLUE));
-            group.add(createLabel("px", new THREE.Vector3(
-                x0 + pxDir.x * (px + 0.5),
-                y0 + pxDir.y * (px + 0.5),
-                zP + pxDir.z * (px + 0.5)
-            ), COLOR_SOFT_RED));
-            group.add(createLabel("py", new THREE.Vector3(
-                x0 + pyDir.x * (py + 0.5),
-                y0 + pyDir.y * (py + 0.5),
-                zP + pyDir.z * (py + 0.5)
-            ), COLOR_PINE_GREEN));
-            group.add(createLabel("pz", new THREE.Vector3(
-                x0 + pzDir.x * (pz + 0.5) + 0.5,
-                y0 + pzDir.y * (pz + 0.5),
-                zP + pzDir.z * (pz + 0.5)
-            ), COLOR_MIST_BLUE));
-            group.add(createLabel("pt", new THREE.Vector3(
-                x0 + (Math.cos(psiRad)) * (pt + 0.5),
-                y0 + (Math.sin(psiRad)) * (pt + 0.5),
-                zP + 0.2
-            ), COLOR_LAKE_CYAN));
+            // pt label at the tip of the pt arrow (slightly offset outward)
+            const ptTip = arrowOrigin.clone().add(ptDir.clone().multiplyScalar(Math.abs(pt) + 0.18));
+            group.add(createLabel('pt', ptTip, COLOR_MIST_BLUE, null, true));
 
+            // p label at the tip of the full momentum vector (slightly offset outward)
+            const pTip = arrowOrigin.clone().add(momentumDir.clone().multiplyScalar(momentumLength + 0.18));
+            group.add(createLabel('p', pTip, COLOR_WARM_ORANGE, null, true));
 
+            // Do not add other 3D labels for momentum/angles here
             return group;
         }
 
         // =================== 初始化场景 ===================
-        let detectorCylinder, pointP, track, phiArc, psiArc, lambdaArc, yPlane, labels, axes, momentumIndicator;
+        let detectorCylinder, pointP, track, phiArc, psiArc, lambdaArc, zPlane, labels, axes, momentumIndicator;
+        let zPlaneLabelsGroup; // group for labels projected onto Z plane
+        let zPlaneProjGroup; // group for projected geometry (circles, arrows, arcs)
 
         function initScene() {
             // 清除旧元素
@@ -684,7 +677,7 @@
             if (phiArc) scene.remove(phiArc);
             if (psiArc) scene.remove(psiArc);
             if (lambdaArc) scene.remove(lambdaArc);
-            if (yPlane) scene.remove(yPlane);
+            if (zPlane) scene.remove(zPlane);
             if (labels) scene.remove(labels);
             if (axes) scene.remove(axes);
             if (momentumIndicator) scene.remove(momentumIndicator);
@@ -696,16 +689,24 @@
             phiArc = createPhiArc();
             psiArc = createPsiArc();
             lambdaArc = createLambdaArc();
-            yPlane = createYPlane();
+            zPlane = createZPlane();
             labels = createTextLabels();
             axes = createCoordinateAxes();
             momentumIndicator = createMomentumIndicator();
+
+            // create or reset Z-plane labels and projection groups
+            if (zPlaneLabelsGroup) scene.remove(zPlaneLabelsGroup);
+            zPlaneLabelsGroup = new THREE.Group();
+            scene.add(zPlaneLabelsGroup);
+            if (zPlaneProjGroup) scene.remove(zPlaneProjGroup);
+            zPlaneProjGroup = new THREE.Group();
+            scene.add(zPlaneProjGroup);
 
             // 计算点P的位置并设置
             const phiRad = THREE.MathUtils.degToRad(params.phi0);
             const x0 = params.cylinder_radius * Math.cos(phiRad);
             const y0 = params.cylinder_radius * Math.sin(phiRad);
-            pointP.position.set(x0, y0, 0);
+            pointP.position.set(x0, y0, params.z0);
 
             // 添加到场景
             scene.add(detectorCylinder);
@@ -714,10 +715,17 @@
             scene.add(phiArc);
             scene.add(psiArc);
             scene.add(lambdaArc);
-            scene.add(yPlane);
+            scene.add(zPlane);
             scene.add(labels);
             scene.add(axes);
             scene.add(momentumIndicator);
+
+            // build projections of selected elements onto Z plane labels
+            try {
+                buildZPlaneProjections();
+            } catch (e) {
+                console.warn('buildZPlaneProjections failed', e);
+            }
         }
 
         // =================== UI控制 ===================
@@ -796,94 +804,23 @@
         // =================== 初始化并运行动画 ===================
         initScene();
 
-        // -------- 投影小窗专用 Three 对象 --------
+        // -------- 投影小窗专用 Three 对象（使用主 renderer 的 viewport 渲染，避免创建第二个 WebGLContext） --------
         const xyScene = new THREE.Scene();
         const xyCam = new THREE.OrthographicCamera(
             -6, 6,   // left, right
             6, -6,  // top, bottom
             -1, 20);
-        const xyCanvas = document.getElementById('xyCanvas');
-        const xyRenderer = new THREE.WebGLRenderer({
-            canvas: xyCanvas,
-            alpha: true
-        });
-        // responsive renderer size (initially matches canvas CSS size)
-        function updateXYRendererSize() {
-            const cssW = xyCanvas.clientWidth || xyCanvas.width || 340;
-            const cssH = xyCanvas.clientHeight || xyCanvas.height || 340;
-            // set device pixel ratio aware size for crisp rendering
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            xyRenderer.setPixelRatio(dpr);
-            xyRenderer.setSize(Math.floor(cssW), Math.floor(cssH), false);
-            // update camera aspect/viewport if needed (not necessary for orthographic, but update projection)
-            xyCam.updateProjectionMatrix();
-        }
-        updateXYRendererSize();
-
-        // bind UI slider if present
-        const xySizeSlider = document.getElementById('xy-size-slider');
-        const xySizeValue = document.getElementById('xy-size-value');
-        if (xySizeSlider && xyCanvas) {
-            xySizeSlider.addEventListener('input', (e) => {
-                const v = parseInt(e.target.value, 10);
-                xySizeValue.textContent = v + 'px';
-                xyCanvas.style.width = v + 'px';
-                xyCanvas.style.height = v + 'px';
-                updateXYRendererSize();
-            });
-        }
-
-        // element visibility controls
-        const chkTrack = document.getElementById('chk-track');
-        const chkMomentum = document.getElementById('chk-momentum');
-        const chkPhi = document.getElementById('chk-phi');
-        const chkPsi = document.getElementById('chk-psi');
-        const chkLabels = document.getElementById('chk-labels');
-
-        // reset XY size button
-        const xyResetBtn = document.getElementById('xy-reset-btn');
-        if (xyResetBtn) {
-            xyResetBtn.addEventListener('click', () => {
-                const def = 340;
-                if (xySizeSlider) {
-                    xySizeSlider.value = def;
-                    xySizeValue.textContent = def + 'px';
-                }
-                xyCanvas.style.width = def + 'px';
-                xyCanvas.style.height = def + 'px';
-                updateXYRendererSize();
-                updateStatus('XY size reset');
-            });
-        }
-
-        // 纯色背景
+        // 将 XY 相机移出到 +Z 方向，确保能看到 z=0 平面上的对象
+        xyCam.position.set(0, 0, 10);
+        xyCam.lookAt(0, 0, 0);
+        // 纯色背景（白色）
         xyScene.background = new THREE.Color(COLOR_WHITE);
-
-        // labels group for small window
-        const xyLabelsGroup = new THREE.Group();
-        xyScene.add(xyLabelsGroup);
-        // axes group for small window
-        const xyAxesGroup = new THREE.Group();
-        xyScene.add(xyAxesGroup);
-
-        function updateXYCameraBounds() {
-            // choose extent to cover detector and some padding
-            const extent = Math.max(Math.abs(params.cylinder_radius) + 3, 6);
-            xyCam.left = -extent;
-            xyCam.right = extent;
-            xyCam.top = extent;
-            xyCam.bottom = -extent;
-            xyCam.updateProjectionMatrix();
-        }
+        // 使用主 renderer 对小视图进行绘制
+        renderer.autoClear = false;
 
         function buildXYProjections() {
-            // ensure camera covers scene
-            updateXYCameraBounds();
-
             // 清旧对象
             [xyTrack, xyPArr, xyPhiArc, xyPsiArc].forEach(o => o && xyScene.remove(o));
-            while (xyLabelsGroup.children.length) xyLabelsGroup.remove(xyLabelsGroup.children[0]);
-            while (xyAxesGroup.children.length) xyAxesGroup.remove(xyAxesGroup.children[0]);
 
             /* 1. 径迹投影（只取 x,y） */
             const pts2D = [];
@@ -905,7 +842,7 @@
             xyTrack = new THREE.Line(
                 new THREE.BufferGeometry().setFromPoints(pts2D),
                 new THREE.LineBasicMaterial({ color: COLOR_SOFT_RED, linewidth: 2 }));
-            if (!chkTrack || chkTrack.checked) xyScene.add(xyTrack);
+            xyScene.add(xyTrack);
 
             /* 2. 动量箭头投影 */
             const phiRad = THREE.MathUtils.degToRad(params.phi0);
@@ -916,7 +853,7 @@
             xyPArr = new THREE.ArrowHelper(
                 dir2D, new THREE.Vector3(x0, y0, 0),
                 2.5, COLOR_WARM_ORANGE, 0.4, 0.2);
-            if (!chkMomentum || chkMomentum.checked) xyScene.add(xyPArr);
+            xyScene.add(xyPArr);
 
             /* 3. φ 弧投影 */
             const phiPts = [];
@@ -929,7 +866,7 @@
             xyPhiArc = new THREE.Line(
                 new THREE.BufferGeometry().setFromPoints(phiPts),
                 new THREE.LineBasicMaterial({ color: COLOR_PINE_GREEN }));
-            if (!chkPhi || chkPhi.checked) xyScene.add(xyPhiArc);
+            xyScene.add(xyPhiArc);
 
             /* 4. ψ 弧投影 */
             const psiPts = [];
@@ -943,59 +880,170 @@
             xyPsiArc = new THREE.Line(
                 new THREE.BufferGeometry().setFromPoints(psiPts),
                 new THREE.LineBasicMaterial({ color: COLOR_SAND_BROWN }));
-            if (!chkPsi || chkPsi.checked) xyScene.add(xyPsiArc);
+            xyScene.add(xyPsiArc);
+        }
 
-            // ----- 添加 XY 轴（带箭头与标签） -----
-            try {
-                const extent = Math.max(Math.abs(params.cylinder_radius) + 3, 6);
-                // compute label scale based on current xy canvas width (base: 340px => scale 1.5)
-                const baseCanvas = 340;
-                const canvasW = xyCanvas ? (xyCanvas.clientWidth || xyCanvas.width || baseCanvas) : baseCanvas;
-                const xyScale = 1.5 * (canvasW / baseCanvas);
+        // 在 Z 平面上创建投影标签（px, py, pt, φ, ψ, track, cylinder, X, Y）
+        function buildZPlaneProjections() {
+            if (!zPlane) return;
 
-                // X axis
-                const xArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0), extent - 1, COLOR_SOFT_RED, 0.4, 0.2);
-                xyAxesGroup.add(xArrow);
-                xyAxesGroup.add(createLabel('X', new THREE.Vector3(extent - 0.6, 0.25, 0), COLOR_SOFT_RED, xyScale));
+            // clear old groups
+            if (zPlaneLabelsGroup) while (zPlaneLabelsGroup.children.length) zPlaneLabelsGroup.remove(zPlaneLabelsGroup.children[0]);
+            if (zPlaneProjGroup) while (zPlaneProjGroup.children.length) zPlaneProjGroup.remove(zPlaneProjGroup.children[0]);
 
-                // Y axis
-                const yArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), extent - 1, COLOR_PINE_GREEN, 0.4, 0.2);
-                xyAxesGroup.add(yArrow);
-                xyAxesGroup.add(createLabel('Y', new THREE.Vector3(0.25, extent - 0.6, 0), COLOR_PINE_GREEN, xyScale));
-            } catch (e) {
-                console.warn('xy axes failed', e);
-            }
+            // positions
+            const zPos = zPlane.position.z + 0.02; // geometry sits slightly above plane
+            const labelZ = zPlane.position.z + 0.08; // labels a bit higher to avoid overlap
 
-            // ----- 添加标签 (P, p, φ, ψ, track) -----
-            try {
-                // point P label
-                const phiRad = THREE.MathUtils.degToRad(params.phi0);
-                const x0 = params.cylinder_radius * Math.cos(phiRad);
-                const y0 = params.cylinder_radius * Math.sin(phiRad);
-                if (!chkLabels || chkLabels.checked) xyLabelsGroup.add(createLabel('P', new THREE.Vector3(x0 + 0.12, y0 + 0.12, 0), COLOR_MIST_BLUE, xyScale));
+            // common params
+            const phiRad = THREE.MathUtils.degToRad(params.phi0);
+            const psiRad = THREE.MathUtils.degToRad(params.psi);
+            const x0 = params.cylinder_radius * Math.cos(phiRad);
+            const y0 = params.cylinder_radius * Math.sin(phiRad);
+            const zP = params.z0;
 
-                // momentum label near arrow tip
-                const psiRad = THREE.MathUtils.degToRad(params.psi);
-                const dir2D = new THREE.Vector3(Math.cos(psiRad), Math.sin(psiRad), 0);
-                if (!chkLabels || chkLabels.checked) xyLabelsGroup.add(createLabel('p', new THREE.Vector3(x0 + dir2D.x * 2.6, y0 + dir2D.y * 2.6, 0), COLOR_WARM_ORANGE, xyScale));
-
-                // φ label placed on the φ arc
-                const phiLabelPos = new THREE.Vector3((params.cylinder_radius + 0.6) * Math.cos(phiRad / 2), (params.cylinder_radius + 0.6) * Math.sin(phiRad / 2), 0);
-                if (!chkLabels || chkLabels.checked) xyLabelsGroup.add(createLabel('φ', phiLabelPos, COLOR_PINE_GREEN, xyScale));
-
-                // ψ label on psi arc
-                const arcR = 1.5;
-                const psiLabelPos = new THREE.Vector3(x0 + arcR * Math.cos(psiRad / 2), y0 + arcR * Math.sin(psiRad / 2), 0);
-                if (!chkLabels || chkLabels.checked) xyLabelsGroup.add(createLabel('ψ', psiLabelPos, COLOR_SOFT_RED, xyScale));
-
-                // track label at midpoint
-                if (pts2D.length && (!chkLabels || chkLabels.checked)) {
-                    const mid = pts2D[Math.floor(pts2D.length / 2)];
-                    xyLabelsGroup.add(createLabel('track', new THREE.Vector3(mid.x + 0.12, mid.y + 0.12, 0), COLOR_SOFT_RED, xyScale));
+            // --- cylinder projection: circle centered at origin ---
+            (function(){
+                const seg = 128;
+                const pts = [];
+                for (let i=0;i<=seg;i++){
+                    const a = (i/seg) * Math.PI * 2;
+                    pts.push(new THREE.Vector3(params.cylinder_radius * Math.cos(a), params.cylinder_radius * Math.sin(a), zPos));
                 }
-            } catch (e) {
-                console.warn('xy labeling failed', e);
-            }
+                const circ = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({color: COLOR_LAKE_CYAN, linewidth: 1}));
+                zPlaneProjGroup.add(circ);
+            })();
+
+            // --- track projection: use same pts as XY projection but at zPos ---
+            (function(){
+                const pts2D = [];
+                const num = 200;
+                for (let i = 0; i <= num; i++) {
+                    const t = (i / num) * 4 * Math.PI;
+                    const k = Math.sign(params.kappa);
+                    const theta = k * t;
+                    const R = 1 / (2 * Math.abs(params.kappa));
+                    const pT = 1; // 归一化
+                    const x = x0 + (Math.sin(theta + psiRad) - Math.sin(psiRad)) * R / pT;
+                    const y = y0 + (Math.cos(psiRad) - Math.cos(theta + psiRad)) * R / pT;
+                    pts2D.push(new THREE.Vector3(x, y, zPos));
+                }
+                const trackLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts2D), new THREE.LineBasicMaterial({color: COLOR_SOFT_RED, linewidth: 2}));
+                zPlaneProjGroup.add(trackLine);
+            })();
+
+            // --- momentum components projections as arrows (px, py, pt) ---
+            (function(){
+                const ptVal = params.kappa !== 0 ? 1 / Math.abs(params.kappa) : 10;
+                const pxVal = ptVal * Math.cos(psiRad);
+                const pyVal = ptVal * Math.sin(psiRad);
+                // base point is projection of P onto plane
+                const base = new THREE.Vector3(x0, y0, zPos);
+
+                // px arrow (along X axis)
+                const dirPx = new THREE.Vector3(Math.sign(pxVal),0,0).normalize();
+                const pxArrow = new THREE.ArrowHelper(dirPx, base, Math.abs(pxVal), COLOR_SOFT_RED, 0.2, 0.1);
+                zPlaneProjGroup.add(pxArrow);
+                zPlaneLabelsGroup.add(createLabel('px', new THREE.Vector3(base.x + dirPx.x * (Math.abs(pxVal)+0.2), base.y, labelZ), COLOR_SOFT_RED, null, true));
+
+                // py arrow (along Y axis)
+                const dirPy = new THREE.Vector3(0, Math.sign(pyVal),0).normalize();
+                const pyArrow = new THREE.ArrowHelper(dirPy, base, Math.abs(pyVal), COLOR_PINE_GREEN, 0.2, 0.1);
+                zPlaneProjGroup.add(pyArrow);
+                zPlaneLabelsGroup.add(createLabel('py', new THREE.Vector3(base.x, base.y + dirPy.y * (Math.abs(pyVal)+0.2), labelZ), COLOR_PINE_GREEN, null, true));
+
+                // pt arrow (transverse) - direction in XY plane
+                const dirPt = new THREE.Vector3(Math.cos(psiRad), Math.sin(psiRad), 0).normalize();
+                const ptArrow = new THREE.ArrowHelper(dirPt, base, ptVal, COLOR_LAKE_CYAN, 0.25, 0.12);
+                zPlaneProjGroup.add(ptArrow);
+                zPlaneLabelsGroup.add(createLabel('pt', new THREE.Vector3(base.x + dirPt.x * (ptVal+0.2), base.y + dirPt.y * (ptVal+0.2), labelZ), COLOR_LAKE_CYAN, null, true));
+            })();
+
+            // --- φ and ψ as arcs between vectors (draw centered at origin for φ, at P for angle between radial and momentum for ψ) ---
+            (function(){
+                // φ: arc from 0 to phiRad centered at origin
+                const seg = 40;
+                const rphi = params.cylinder_radius * 0.5;
+                const phiPts = [];
+                // center φ arc at midpoint of O and P (move halfway towards O)
+                const centerX = 0;
+                const centerY = 0;
+                for (let i = 0; i <= seg; i++) {
+                    const a = (i / seg) * phiRad;
+                    phiPts.push(new THREE.Vector3(centerX + rphi * Math.cos(a), centerY + rphi * Math.sin(a), zPos));
+                }
+                const phiLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(phiPts), new THREE.LineBasicMaterial({ color: COLOR_PINE_GREEN }));
+                zPlaneProjGroup.add(phiLine);
+                const phiMidAngle = phiRad / 2;
+                const phiLabelPos = new THREE.Vector3(
+                    centerX + rphi * Math.cos(phiMidAngle),
+                    centerY + rphi * Math.sin(phiMidAngle),
+                    labelZ
+                );
+                // 计算径向单位向量（2D）
+                const phiDir2 = new THREE.Vector2(phiLabelPos.x - centerX, phiLabelPos.y - centerY).normalize();
+                phiLabelPos.x += phiDir2.x * 0.25; // 沿径向再外推 0.25 单位（可调整）
+                phiLabelPos.y += phiDir2.y * 0.25;
+                zPlaneLabelsGroup.add(createLabel('φ', phiLabelPos, COLOR_PINE_GREEN, null, true));
+                // ψ: angle between radial vector (from origin to P) and momentum direction; draw arc centered at P
+                // For ψ: draw arc between px direction and pt (transverse momentum) direction
+                const ptVal_local = params.kappa !== 0 ? 1 / Math.abs(params.kappa) : 10;
+                const pxVal_local = ptVal_local * Math.cos(psiRad);
+                const dirPt = new THREE.Vector2(Math.cos(psiRad), Math.sin(psiRad));
+                // start angle: px direction (along +X if px>=0, otherwise -X)
+                const startA = (pxVal_local >= 0) ? 0 : Math.PI;
+                // end angle: pt direction
+                const endA = Math.atan2(dirPt.y, dirPt.x);
+                // normalize so arc goes shortest way
+                let a0 = startA;
+                let a1 = endA;
+                while (a1 - a0 > Math.PI) a1 -= Math.PI*2;
+                while (a1 - a0 < -Math.PI) a1 += Math.PI*2;
+                const arcuSeg = 30;
+                const rpsi = 1.2;
+                const psiPts = [];
+                for (let i=0;i<=arcuSeg;i++){
+                    const a = a0 + (i/arcuSeg) * (a1 - a0);
+                    psiPts.push(new THREE.Vector3(x0 + rpsi * Math.cos(a), y0 + rpsi * Math.sin(a), zPos));
+                }
+                const psiLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(psiPts), new THREE.LineBasicMaterial({color: COLOR_SOFT_RED}));
+                zPlaneProjGroup.add(psiLine);
+                // label at mid angle on psi arc
+                const midA = a0 + 0.5*(a1-a0);
+                const psiLabelPos = new THREE.Vector3(
+                    x0 + rpsi * Math.cos(midA),
+                    y0 + rpsi * Math.sin(midA),
+                    labelZ + 0.02
+                );
+                // 径向偏移（中心是 P，即 x0,y0）
+                const psiDir2 = new THREE.Vector2(psiLabelPos.x - x0, psiLabelPos.y - y0).normalize();
+                psiLabelPos.x += psiDir2.x * 0.25; // 推开距离可以相同或略有差别
+                psiLabelPos.y += psiDir2.y * 0.25;
+                zPlaneLabelsGroup.add(createLabel('ψ', psiLabelPos, COLOR_SOFT_RED, null, true));
+            })();
+
+            // --- X axis projection on Z plane (visual aid only, no label) ---
+            (function() {
+                const axisLen = 8;
+                const xPts = [
+                    new THREE.Vector3(-axisLen, 0, zPos),
+                    new THREE.Vector3(axisLen, 0, zPos)
+                ];
+                const xLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(xPts), new THREE.LineBasicMaterial({ color: COLOR_GRAY, linewidth: 1 }));
+                zPlaneProjGroup.add(xLine);
+            })();
+
+            // note: do not add labels for cylinder/track as requested
+
+            // also add projection of O->P dashed line onto Z plane
+            (function(){
+                const zPos = zPlane ? zPlane.position.z + 0.02 : -params.cylinder_length/2 + 0.02;
+                const opProj = createDashedLine([
+                    new THREE.Vector3(0, 0, zPos),
+                    new THREE.Vector3(x0, y0, zPos)
+                ], { color: COLOR_GRAY, dashSize: 0.5, gapSize: 0.5 });
+                if (zPlaneProjGroup) zPlaneProjGroup.add(opProj);
+            })();
         }
 
         // -------- 构建 2D 线条/箭头的空壳 --------
@@ -1005,10 +1053,29 @@
         // 动画循环
         function animate() {
             buildXYProjections();   // 参数变化即重绘
-            xyRenderer.render(xyScene, xyCam);
             requestAnimationFrame(animate);
             controls.update();
+
+            // 首先清空主画布并绘制主场景
+            renderer.clear();
+            renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+            renderer.setScissorTest(false);
             renderer.render(scene, camera);
+
+            // 然后在右下角绘制小视图（使用主 renderer 的 viewport + scissor）
+            const xySize = 200; // 固定小窗像素大小
+            const margin = 20;
+            const px = window.innerWidth - xySize - margin;
+            const py = margin;
+
+            renderer.clearDepth(); // 保证小视图不被深度缓存影响
+            renderer.setScissor(px, py, xySize, xySize);
+            renderer.setViewport(px, py, xySize, xySize);
+            renderer.setScissorTest(true);
+            renderer.render(xyScene, xyCam);
+
+            // 关闭 scissor 测试
+            renderer.setScissorTest(false);
         }
         animate();
 
@@ -1017,8 +1084,6 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            // also update small window renderer size to match CSS
-            updateXYRendererSize();
         });
 
         // 初始状态

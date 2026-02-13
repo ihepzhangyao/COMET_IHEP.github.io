@@ -43,3 +43,8 @@ $$p_z = p_t \times tan\lambda$$
 > 3D illustration link: [3D illustration](./other-pages/cdc_track_parameter.html)
 
 ![figure3 2D](./assets/2D.png)
+
+
+
+
+> ps: BESIII track parameter[BESIII 3D](./other-pages/mdc_track_parameter.html)

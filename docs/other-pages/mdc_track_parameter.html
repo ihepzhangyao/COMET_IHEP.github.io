@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>COMET MDC Track Parameter</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background: #1a1a2e; font-family: Arial, sans-serif; }
+        #controls { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.7); color: white; padding: 15px; border-radius: 10px; z-index: 100; max-width: 360px; }
+        .control-group { margin: 10px 0; }
+        button { margin: 5px; padding: 8px 15px; background: #2196f3; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #1976d2; }
+        #status { position: absolute; bottom: 20px; left: 20px; color: white; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; }
+        .param-control { margin: 8px 0; }
+        .param-control label { display: inline-block; width: 120px; color: #4fc3f7; }
+        .param-control input { width: 160px; }
+        .description { color: #cfd8dc; font-size: 13px; margin-top: 8px; }
+        .defs { color: #ffffff; font-size: 14px; margin-top: 10px; }
+        .defs li { margin: 6px 0; }
+    </style>
+</head>
+
+<body>
+    <div id="controls">
+        <h3>BESIII MDC Track Parameters</h3>
+
+        <div class="control-group defs">
+            <div>下列为MDC中常用的径迹五参数（中英对照）：</div>
+            <ol>
+                <li><b>dρ</b>: 在 x-y 平面上，螺旋线到参考点（pivot）的带符号距离（单位 cm）。符号由 (d × p) 的方向决定，其中 d 为参考点到径迹的向量，p 为径迹在参考点处的切向量（即动量方向）。</li>
+                <li><b>φ0</b>: 指定参考点相对于螺旋圆心的方位角（单位 rad），取值范围 0 到 2π。</li>
+                <li><b>κ (kappa)</b>: 横向动量的倒数 κ = 1/pt（单位 (GeV/c)−1）。κ 的符号表示电荷。</li>
+                <li><b>dz</b>: 在 z 方向上，螺旋线到参考点的带符号距离（单位 cm）。</li>
+                <li><b>tanλ</b>: 径迹斜率，即倾角 λ 的正切。极角 θ = π/2 − λ。</li>
+            </ol>
+        </div>
+
+        <div class="control-group">
+            <button id="reset-view">Reset View</button>
+            <button id="reset-all">Reset All</button>
+        </div>
+
+        <div class="control-group">
+            <div class="param-control"><label>dρ (cm):</label><input id="drho-slider" type="range" min="-5" max="5" step="0.01" value="0"><span id="drho-value">0.00</span></div>
+            <div class="param-control"><label>φ0 (deg):</label><input id="phi0-slider" type="range" min="0" max="360" step="1" value="0"><span id="phi0-value">0°</span></div>
+            <div class="param-control"><label>κ = 1/pt ((GeV/c)−1):</label><input id="kappa-slider" type="range" min="-2" max="2" step="0.01" value="0.2"><span id="kappa-value">0.20</span></div>
+            <div class="param-control"><label>dz (cm):</label><input id="dz-slider" type="range" min="-10" max="10" step="0.01" value="0"><span id="dz-value">0.00</span></div>
+            <div class="param-control"><label>tanλ:</label><input id="tanlambda-slider" type="range" min="-5" max="5" step="0.01" value="0.5"><span id="tanlambda-value">0.50</span></div>
+        </div>
+
+        <div class="control-group description">
+            <div>说明：MDC 中径迹通常采用经过原点的螺旋线描述，上述五参数可用于完整刻画该螺旋线在空间中的位置与方向。</div>
+            <div style="margin-top:8px;">Author: Zhang Zhaoke(张兆轲) (zkzhang@ihep.ac.cn)</div>
+        </div>
+    </div>
+
+    <div id="status">Ready</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+    <script>
+        // 渲染器与场景
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(8, 6, 10);
+        camera.lookAt(0, 0, 0);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+        const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(10, 10, 10); scene.add(dl);
+
+        // Add grid helper for orientation (XY plane)
+        const grid = new THREE.GridHelper(20, 20, 0x888888, 0xcccccc);
+        grid.rotation.x = Math.PI / 2; // make grid in XY plane
+        scene.add(grid);
+
+        // 3D axes with arrows and labels
+        function makeAxisArrow(dir, color, length) {
+            const origin = new THREE.Vector3(0, 0, 0);
+            const arrow = new THREE.ArrowHelper(dir.clone().normalize(), origin, length, color, length * 0.08, length * 0.05);
+            return arrow;
+        }
+
+        function makeLabel(text, position, color = '#000000') {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 256; canvas.height = 128;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.font = 'Bold 64px Arial';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            const cssColor = typeof color === 'number' ? '#' + color.toString(16).padStart(6, '0') : color;
+            ctx.fillStyle = cssColor;
+            ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.needsUpdate = true;
+            const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+            mat.depthTest = false;
+            mat.depthWrite = false;
+            const sprite = new THREE.Sprite(mat);
+            sprite.frustumCulled = false;
+            sprite.scale.set(4.0, 2.0, 1);
+            sprite.position.copy(position);
+            sprite.renderOrder = 9999;
+            return sprite;
+        }
+
+        // createLabel: 支持 scale 和 alwaysOnTop，兼容 CDC 文件中的实现
+        function createLabel(text, position, color = 0xffffff, scale = null, alwaysOnTop = false) {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+
+            canvas.width = 256;
+            canvas.height = 128;
+            context.clearRect(0, 0, canvas.width, canvas.height);
+
+            context.font = 'Bold 64px Arial';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            const cssColor = typeof color === 'number' ? '#' + color.toString(16).padStart(6, '0') : color;
+            context.fillStyle = cssColor;
+            context.fillText(text, canvas.width/2, canvas.height/2);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+            const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+            // force labels on top and ensure alpha works
+            material.depthTest = false;
+            material.depthWrite = false;
+            material.alphaTest = 0.01;
+            const sprite = new THREE.Sprite(material);
+            sprite.frustumCulled = false;
+            if (scale === null) sprite.scale.set(4.0, 2.0, 1);
+            else sprite.scale.set(scale, scale*0.5, 1);
+            sprite.position.copy(position);
+            sprite.renderOrder = 9999;
+            return sprite;
+        }
+
+        // 简易虚线生成器，参照 CDC 实现以在 XY 投影中渲染 dρ 辅助线
+        function createDashedLine(pointsArray, opts = {}) {
+            const dashSize = opts.dashSize !== undefined ? opts.dashSize : 0.8;
+            const gapSize = opts.gapSize !== undefined ? opts.gapSize : 0.6;
+            const color = opts.color !== undefined ? opts.color : 0x888888;
+            const linewidth = opts.linewidth !== undefined ? opts.linewidth : 1;
+
+            if (!Array.isArray(pointsArray) || pointsArray.length < 2) {
+                return new THREE.Group();
+            }
+
+            const segLens = [];
+            let totalLen = 0;
+            for (let i = 0; i < pointsArray.length - 1; i++) {
+                const length = pointsArray[i].distanceTo(pointsArray[i + 1]);
+                segLens.push(length);
+                totalLen += length;
+            }
+            if (totalLen <= 0) return new THREE.Group();
+
+            const dashSegments = [];
+            const step = dashSize + gapSize;
+            for (let start = 0; start < totalLen; start += step) {
+                const dashStart = start;
+                const dashEnd = Math.min(start + dashSize, totalLen);
+                if (dashEnd <= dashStart) continue;
+
+                let accum = 0;
+                for (let i = 0; i < segLens.length; i++) {
+                    const segStart = accum;
+                    const segEnd = accum + segLens[i];
+                    accum = segEnd;
+                    const overlapStart = Math.max(dashStart, segStart);
+                    const overlapEnd = Math.min(dashEnd, segEnd);
+                    if (overlapEnd <= overlapStart + 1e-9) continue;
+
+                    const denom = segLens[i] || 1;
+                    const localStartT = (overlapStart - segStart) / denom;
+                    const localEndT = (overlapEnd - segStart) / denom;
+                    const p0 = pointsArray[i];
+                    const p1 = pointsArray[i + 1];
+                    const segP0 = new THREE.Vector3().copy(p0).lerp(p1, localStartT);
+                    const segP1 = new THREE.Vector3().copy(p0).lerp(p1, localEndT);
+                    dashSegments.push(segP0, segP1);
+                }
+            }
+
+            const positions = new Float32Array(dashSegments.length * 3);
+            for (let i = 0; i < dashSegments.length; i++) {
+                positions[i * 3 + 0] = dashSegments[i].x;
+                positions[i * 3 + 1] = dashSegments[i].y;
+                positions[i * 3 + 2] = dashSegments[i].z;
+            }
+            const geom = new THREE.BufferGeometry();
+            geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const mat = new THREE.LineBasicMaterial({ color, linewidth });
+            return new THREE.LineSegments(geom, mat);
+        }
+
+        const axisLength = 6;
+        scene.add(makeAxisArrow(new THREE.Vector3(1, 0, 0), 0xff0000, axisLength)); // X - red
+        scene.add(makeAxisArrow(new THREE.Vector3(0, 1, 0), 0x00aa00, axisLength)); // Y - green
+        scene.add(makeAxisArrow(new THREE.Vector3(0, 0, 1), 0x0000ff, axisLength)); // Z - blue
+
+        scene.add(makeLabel('X', new THREE.Vector3(axisLength + 0.6, 0, 0), '#ff0000'));
+        scene.add(makeLabel('Y', new THREE.Vector3(0, axisLength + 0.6, 0), '#00aa00'));
+        scene.add(makeLabel('Z', new THREE.Vector3(0, 0, axisLength + 0.6), '#0000ff'));
+
+        // 参数对象（MDC 样式）
+        let params = {
+            drho: 0.0,
+            phi0: 0.0,
+            kappa: 0.2,
+            dz: 0.0,
+            tanlambda: 0.5
+        };
+
+        // 可视化元素容器
+        let helixGroup = new THREE.Group();
+        scene.add(helixGroup);
+
+        function computePlanarParams() {
+            const baseRadius = params.kappa !== 0 ? Math.abs(1.0 / params.kappa) : 50.0;
+            const radius = Math.max(0.2, baseRadius + params.drho);
+            const phi0Rad = THREE.MathUtils.degToRad(params.phi0);
+            const cx = radius * Math.cos(phi0Rad);
+            const cy = radius * Math.sin(phi0Rad);
+            const startAngle = Math.atan2(-cy, -cx);
+            return { baseRadius, radius, phi0Rad, cx, cy, startAngle };
+        }
+
+        function clearHelix() { while (helixGroup.children.length) helixGroup.remove(helixGroup.children[0]); }
+
+        function createHelix() {
+            clearHelix();
+
+            const { radius: R, cx, cy, startAngle } = computePlanarParams();
+
+            const points = [];
+            const turns = 4;
+            const numPoints = 500;
+            for (let i = 0; i <= numPoints; i++) {
+                const delta = (i / numPoints) * turns * Math.PI * 2;
+                const angle = startAngle + delta;
+                const x = cx + R * Math.cos(angle);
+                const y = cy + R * Math.sin(angle);
+                const z = params.dz + params.tanlambda * R * delta;
+                points.push(new THREE.Vector3(x, y, z));
+            }
+
+            const geom = new THREE.BufferGeometry().setFromPoints(points);
+            const mat = new THREE.LineBasicMaterial({ color: 0xff6b6b });
+            const line = new THREE.Line(geom, mat);
+            helixGroup.add(line);
+
+            const pivotGeom = new THREE.SphereGeometry(0.08, 8, 8);
+                const pivotMat = new THREE.MeshBasicMaterial({ color: 0x4fc3f7 });
+            const pivot = new THREE.Mesh(pivotGeom, pivotMat);
+            pivot.position.set(0, 0, 0);
+            helixGroup.add(pivot);
+
+            const centerGeom = new THREE.SphereGeometry(0.06, 8, 8);
+                const centerMat = new THREE.MeshBasicMaterial({ color: 0x59a14f });
+            const center = new THREE.Mesh(centerGeom, centerMat);
+            center.position.set(cx, cy, params.dz);
+            helixGroup.add(center);
+
+            const lineGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,params.dz), new THREE.Vector3(cx,cy,params.dz)]);
+                const dashedMat = new THREE.LineDashedMaterial({ color: 0x888888, dashSize: 0.3, gapSize: 0.2 });
+                const centerLine = new THREE.Line(lineGeom, dashedMat);
+            centerLine.computeLineDistances();
+            helixGroup.add(centerLine);
+        }
+
+        createHelix();
+
+        // XY plane projection placed directly on the main scene at z=0
+                // use var so it's accessible on window for debugging and external inspection
+                var xyProjGroup = null;
+        function buildXYPlaneProjections() {
+            // remove old
+            if (xyProjGroup) { scene.remove(xyProjGroup); xyProjGroup = null; }
+            xyProjGroup = new THREE.Group();
+            scene.add(xyProjGroup);
+                // expose to window for easier debugging in console
+                try { window.xyProjGroup = xyProjGroup; } catch (e) { /* ignore */ }
+
+            const { radius: R, cx, cy } = computePlanarParams();
+            const z0 = 0; // projection on z=0 plane
+
+            // circle (projection of helix in XY)
+            const circPts = [];
+            const seg = 128;
+            for (let i = 0; i <= seg; i++) {
+                const a = (i / seg) * Math.PI * 2;
+                circPts.push(new THREE.Vector3(cx + R * Math.cos(a), cy + R * Math.sin(a), z0));
+            }
+            const circ = new THREE.Line(new THREE.BufferGeometry().setFromPoints(circPts), new THREE.LineBasicMaterial({ color: 0xff6b6b }));
+            xyProjGroup.add(circ);
+
+            // pivot marker at origin
+            const pivotMarker = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), new THREE.MeshBasicMaterial({ color: 0x4fc3f7 }));
+            pivotMarker.position.set(0, 0, z0);
+            xyProjGroup.add(pivotMarker);
+
+            // center marker
+            const centerMarker = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), new THREE.MeshBasicMaterial({ color: 0x59a14f }));
+            centerMarker.position.set(cx, cy, z0);
+            xyProjGroup.add(centerMarker);
+
+            console.log('buildXYPlaneProjections start, cx,cy,z0', cx, cy, z0);
+            // dashed line pivot->center and dρ label
+            const dash = createDashedLine([new THREE.Vector3(0, 0, z0), new THREE.Vector3(cx, cy, z0)], { color: 0x888888, dashSize: 0.3, gapSize: 0.2 });
+            xyProjGroup.add(dash);
+            const mid = new THREE.Vector3((0 + cx) / 2, (0 + cy) / 2, z0 + 0.3);
+            const drhoLabel = createLabel('dρ', mid, 0xff6b6b, 4.0, true);
+            console.log('created drhoLabel', drhoLabel && (drhoLabel.type || drhoLabel.constructor && drhoLabel.constructor.name), drhoLabel);
+            xyProjGroup.add(drhoLabel);
+
+            // φ0 arc at origin
+            const phiPts = [];
+            const phiAngle = Math.atan2(cy, cx);
+            const arcR = Math.min(1.2, R * 0.2 + 0.6);
+            const arcSeg = 32;
+            for (let i = 0; i <= arcSeg; i++) {
+                const a = (i / arcSeg) * phiAngle;
+                phiPts.push(new THREE.Vector3(arcR * Math.cos(a), arcR * Math.sin(a), z0));
+            }
+            const phiLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(phiPts), new THREE.LineBasicMaterial({ color: 0x59a14f }));
+            xyProjGroup.add(phiLine);
+            const phiLabelPos = new THREE.Vector3(arcR * Math.cos(phiAngle / 2) * 1.1, arcR * Math.sin(phiAngle / 2) * 1.1, z0 + 0.3);
+            const phiLabel = createLabel('φ0', phiLabelPos, 0x59a14f, 4.0, true);
+            console.log('created phiLabel', phiLabel && (phiLabel.type || phiLabel.constructor && phiLabel.constructor.name), phiLabel);
+            xyProjGroup.add(phiLabel);
+
+            // κ arrow at pivot (tangent direction) and label
+            const vecToOrigin = new THREE.Vector2(-cx, -cy).normalize();
+            const tanDir = new THREE.Vector2(-vecToOrigin.y, vecToOrigin.x).normalize();
+            const ptLen = params.kappa !== 0 ? 1 / Math.abs(params.kappa) : 10;
+            const arrowDir = new THREE.Vector3(tanDir.x, tanDir.y, 0).normalize();
+            const ptArrow = new THREE.ArrowHelper(arrowDir, new THREE.Vector3(0, 0, z0), Math.min(3, ptLen), 0x2196f3, 0.25, 0.15);
+            xyProjGroup.add(ptArrow);
+            const kappaLabelPos = new THREE.Vector3(arrowDir.x * Math.min(3, ptLen) + 0.4, arrowDir.y * Math.min(3, ptLen) + 0.2, z0 + 0.3);
+            const kappaLabel = createLabel('κ', kappaLabelPos, 0x2196f3, 4.0, true);
+            console.log('created kappaLabel', kappaLabel && (kappaLabel.type || kappaLabel.constructor && kappaLabel.constructor.name), kappaLabel);
+            xyProjGroup.add(kappaLabel);
+
+            // dz and tanλ labels (place near origin)
+            const dzLabel = createLabel('dz', new THREE.Vector3(-1.8, -2.0, z0 + 0.3), 0x8c564b, 4.0, true);
+            console.log('created dzLabel', dzLabel && (dzLabel.type || dzLabel.constructor && dzLabel.constructor.name), dzLabel);
+            xyProjGroup.add(dzLabel);
+            const tanLabel = createLabel('tanλ', new THREE.Vector3(-1.8, -2.6, z0 + 0.3), 0xb07aa1, 4.0, true);
+            console.log('created tanLabel', tanLabel && (tanLabel.type || tanLabel.constructor && tanLabel.constructor.name), tanLabel);
+            xyProjGroup.add(tanLabel);
+
+            // debug: report how many sprites were added to xyProjGroup
+            try {
+                const sprites = xyProjGroup.children.filter(c => c.type === 'Sprite');
+                console.log('buildXYPlaneProjections: sprites', sprites.length, sprites.map(s=>({pos:s.position.toArray(), scale:s.scale.toArray()})));
+            } catch(e) { console.warn('sprite debug failed', e); }
+        }
+
+        // UI 绑定
+        function $(id) { return document.getElementById(id); }
+        const bindings = [ ['drho-slider','drho-value','drho'], ['phi0-slider','phi0-value','phi0'], ['kappa-slider','kappa-value','kappa'], ['dz-slider','dz-value','dz'], ['tanlambda-slider','tanlambda-value','tanlambda'] ];
+
+        bindings.forEach(([sId,vId,key]) => {
+            const slider = $(sId); const display = $(vId);
+            function update() {
+                const val = parseFloat(slider.value);
+                params[key] = val;
+                if (key === 'phi0') display.textContent = val + '°'; else display.textContent = val.toFixed(2);
+                createHelix();
+            }
+            slider.addEventListener('input', update);
+            update();
+        });
+
+        $('reset-all').addEventListener('click', () => {
+            $('drho-slider').value = 0; $('phi0-slider').value = 0; $('kappa-slider').value = 0.2; $('dz-slider').value = 0; $('tanlambda-slider').value = 0.5;
+            bindings.forEach(b => document.getElementById(b[0]).dispatchEvent(new Event('input')));
+        });
+
+        $('reset-view').addEventListener('click', () => { camera.position.set(8,6,10); controls.target.set(0,0,0); });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            // update projections on main XY plane BEFORE rendering so labels appear immediately
+            try { buildXYPlaneProjections(); } catch (e) { /* ignore during init */ }
+            renderer.clear();
+            renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+            renderer.setScissorTest(false);
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+    </script>
+</body>
+
+</html>
